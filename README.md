@@ -56,7 +56,7 @@ print(targetTable.target_key1, targetTable.target_key2) -- "Hello, world!"를 2�
 - `Store:Register()`로 등록했던걸 취소합니다.
 
 ## `Store:Observe(storeKey: string, observeFunction: (newValue: any, oldValue: any) -> ()): Store`
-- Store의 값이 수정되는것을 감지합니다.
+- Store의 특정 값이 수정되는것을 감지합니다.
 
 ```lua
 local Store = require(path.to.store)
@@ -76,11 +76,19 @@ myStore.test = "Bye, world!"
 -- "Hello, world!"를 출력하고 "Bye, world!"를 출력합니다.
 ```
 
+## `Store:ObserveAll(observeFunction: (storeKey: string, newValue: any, oldValue: any) -> ()): Store`
+- Store의 값이 수정되는것을 감지합니다.
+
+## `Store:Trigger(storeKey: string): Store`
+- Store 값 변경 없이, `ObserveFunction`들을 실행시켜줍니다. 이때, `ObserveFunction`의 인자에는 전부 `nil`이 들어옵니다.
+
+## `Store:WaitForChange(storeKey: string): (any, any)`
+- Store의 값이 바뀔때 까지 기다리고, `newValue`와 `oldValue`를 반환해줍니다.
+
+## `Store:WaitForValue<T>(storeKey: string, value: T): (T, any)`
+- Store의 값이 특정 값이 될때까지 기다리고, `newValue`와 `oldValue`를 반환해줍니다.
+
 # TODO LIST
 - `Store:Each(eachFunction: (key: string, value: string)): Store` 만들기(`Store`에 들어있는 값들 반복문)
 - `Store:EachAsync(eachFunction: (key: string, value: string)): Store` 만들기(`Store:Each()`의 비동기 버전)
-- `Store:WaitForChange(storeKey: string): (any, any)` 만들기(`Store`의 키값이 바뀔때까지 기다리고 바뀐 키값과 바뀌기 전 값 반환)
-- `Store:WaitForValue<string, T>(storeKey: string, value: T): (T, any)` 만들기(`Store`의 키값이 특정 값으로 바뀔때까지 기다리고 바뀐 값과 바뀌기 전 값 반환환)
-- `Store:ObserveAll(observeFunction: (storeKey: string, newValue: any, oldValue: any) -> ()): Store` 만들기(`Store:Observe()`의 전체 버전)
-- `Store:Trigger(storeKey: string): Store` 만들기(값 변경 없이 `Observe` 트리거)
-- `Store:Tween(storeKey: string, tweenInfo: TweenInfo, goal: any)` 만들기(`Store`에 있는 값 트윈시키기)
+- `Store:Tween(storeKey: string, tweenInfo: TweenInfo, goal: any)` 만들기(Quad의 AdvancedTween을 참고하여, `Store`에 있는 값 트윈시키기)
