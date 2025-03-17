@@ -93,6 +93,20 @@ export type Store = typeof(setmetatable({} :: {
 		storeKey: string,
 		alsoTriggerObserveAll: boolean?
 	) -> Store;
+	Each: (
+		self: Store,
+		eachFunction: (
+			storeKey: string,
+			value: any
+		) -> ()
+	) -> Store;
+	EachAsync: (
+		self: Store,
+		eachFunction: (
+			storeKey: string,
+			value: any
+		) -> ()
+	) -> Store;
 	WaitForChange: (
 		self: Store,
 		storeKey: string
@@ -291,6 +305,32 @@ function Methods:Trigger(
 
 	for _, v in self._observeAllFunctions do
 		task.spawn(v)
+	end
+
+	return self
+end
+
+function Methods:Each(
+	eachFunction: (
+		storeKey: string,
+		value: any
+	) -> ()
+): Store
+	for key, value in self._self do
+		eachFunction(key, value)
+	end
+
+	return self
+end
+
+function Methods:EachAsync(
+	eachFunction: (
+		storeKey: string,
+		value: any
+	) -> ()
+): Store
+	for key, value in self._self do
+		task.spawn(eachFunction, key, value)
 	end
 
 	return self
