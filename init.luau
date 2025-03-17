@@ -37,7 +37,14 @@ export type Store = typeof(setmetatable({} :: {
 			) -> ()
 		}
 	};
-	
+	_waitThreads: {
+		[string]: {
+			thread: thread;
+			value: any?;
+			isSimple: boolean?;
+		}
+	}
+
 	Register: (
 		self: Store,
 		storeKey: string,
@@ -58,6 +65,15 @@ export type Store = typeof(setmetatable({} :: {
 			oldValue: any
 		) -> ()
 	) -> Store;
+	WaitForChange: (
+		self: Store,
+		storeKey: string
+	) -> any;
+	WaitForValue: <Store, string, T>(
+		self: Store,
+		storeKey: string,
+		value: T
+	) -> T;
 }, {} :: StoreImpl))
 
 --#[ Services ]#--
@@ -116,12 +132,20 @@ function StoreImpl.__newindex(
 			task.spawn(v, value, oldValue)
 		end
 	end
+
+	if self._waitThreads[key] then
+		for _, v in self._waitThreads[key] do
+			if v.isSimple or(not v.isSimple and v.value == value) then
+				task.spawn(v.thread, value)
+			end
+		end
+	end
 end
 
 function StoreImpl.GetStore(
-	storeId: string
+	storeId: string?
 ): Store
-	if StoreIdSpace[storeId] then
+	if storeId and  StoreIdSpace[storeId] then
 		return StoreIdSpace[storeId]
 	end
 	
@@ -131,10 +155,13 @@ function StoreImpl.GetStore(
 	self._self = {}
 	self._registeredTables = {}
 	self._observeFunctions = {}
+	self._waitThreads = {}
 	
 	self = setmetatable(self, StoreImpl)
 	
-	StoreIdSpace[storeId] = self
+	if storeId then
+		StoreIdSpace[storeId] = self
+	end
 	
 	return self :: Store
 end
@@ -182,6 +209,35 @@ function Methods:Observe(
 	table.insert(self._observeFunctions[storeKey], observeFunction)
 	
 	return self
+end
+
+function Methods:WaitForChange(
+	storeKey: string
+): any
+	local thread = coroutine.running()
+
+	self._waitThreads[storeKey] = self._waitThreads[storeKey] or {}
+	table.insert(self._waitThreads, {
+		thread = thread;
+		isSimple = true;
+	})
+
+	return coroutine.yield()
+end
+
+function Methods:<Store, string, T>WaitForValue(
+	storeKey: string,
+	value: T
+): T
+	local thread = coroutine.running()
+
+	self._waitThreads[storeKey] = self._waitThreads[storeKey] or {}
+	table.insert(self._waitThreads[storeKey], {
+		thread = thread;
+		value = value;
+	})
+
+	return coroutine.yield()
 end
 
 return StoreImpl
