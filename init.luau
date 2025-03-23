@@ -37,11 +37,19 @@ export type Store = typeof(setmetatable({} :: {
 			) -> ()
 		}
 	};
-	_observeAllFunctions: {
-		(
-				storeKey: string,
+	_asyncObserveFunctions: {
+		[string]: {
+			(
 				newValue: any,
 				oldValue: any
+			) -> ()
+		}
+	};
+	_asyncObserveAllFunctions: {
+		(
+			storeKey: string,
+			newValue: any,
+			oldValue: any
 		) -> ()
 	};
 	_waitThreads: {
@@ -80,7 +88,23 @@ export type Store = typeof(setmetatable({} :: {
 			oldValue: any
 		) -> ()
 	) -> Store;
+	ObserveAsync: (
+		self: Store,
+		storeKey: string,
+		observeFunction: (
+			newValue: any,
+			oldValue: any
+		) -> ()
+	) -> Store;
 	ObserveAll: (
+		self: Store,
+		observeFunction: (
+			storeKey: string,
+			newValue: any,
+			oldValue: any
+		) -> ()
+	) -> Store;
+	ObserveAllAsync: (
 		self: Store,
 		observeFunction: (
 			storeKey: string,
@@ -92,20 +116,6 @@ export type Store = typeof(setmetatable({} :: {
 		self: Store,
 		storeKey: string,
 		alsoTriggerObserveAll: boolean?
-	) -> Store;
-	Each: (
-		self: Store,
-		eachFunction: (
-			storeKey: string,
-			value: any
-		) -> ()
-	) -> Store;
-	EachAsync: (
-		self: Store,
-		eachFunction: (
-			storeKey: string,
-			value: any
-		) -> ()
 	) -> Store;
 	WaitForChange: (
 		self: Store,
@@ -125,7 +135,7 @@ export type Store = typeof(setmetatable({} :: {
 }, {} :: StoreImpl))
 
 --#[ Services ]#--
---
+local TweenService = game:GetService("TweenService")
 
 --#[ Head Variables ]#--
 local StoreIdSpace = {}
@@ -173,19 +183,27 @@ function StoreImpl.__newindex(
 
 	if self._registeredTables[key] then
 		for _, v in self._registeredTables[key] do
-			task.spawn(function()
-				v.targetTable[v.targetKey or key] = value
-			end)
+			v.targetTable[v.targetKey or key] = value
+		end
+	end
+	
+	if self._observeFunctions[key] then
+		for _, v in self._observeFunctions[key] do
+			v(value, oldValue)
 		end
 	end
 
-	if self._observeFunctions[key] then
-		for _, v in self._observeFunctions[key] do
+	if self._asyncObserveFunctions[key] then
+		for _, v in self._asyncObserveFunctions[key] do
 			task.spawn(v, value, oldValue)
 		end
 	end
 
 	for _, v in self._observeAllFunctions do
+		v(key, value, oldValue)
+	end
+	
+	for _, v in self._asyncObserveAllFunctions do
 		task.spawn(v, key, value, oldValue)
 	end
 
@@ -196,7 +214,7 @@ function StoreImpl.__newindex(
 			if index > #self._waitThreads[key] then
 				break
 			end
-			
+
 			local _value = self._waitThreads[key][index]
 
 			if _value.isSimple or (not _value.isSimple and _value.value == value) then
@@ -223,7 +241,9 @@ function StoreImpl.GetStore(
 	self._self = {}
 	self._registeredTables = {}
 	self._observeFunctions = {}
+	self._asyncObserveFunctions = {}
 	self._observeAllFunctions = {}
+	self._asyncObserveAllFunctions = {}
 	self._waitThreads = {}
 	self._tweens = {}
 
@@ -281,6 +301,20 @@ function Methods:Observe(
 	return self
 end
 
+function Methods:ObserveAsync(
+	storeKey: string,
+	observeFunction: (
+		newValue: any,
+		oldValue: any
+	) -> ()
+): Store
+	
+	self._asyncObserveFunctions[storeKey] = self._observeFunctions[storeKey] or {}
+	table.insert(self._asyncObserveFunctions[storeKey], observeFunction)
+
+	return self
+end
+
 function Methods:ObserveAll(
 	observeFunction: (
 		storeKey: string,
@@ -289,6 +323,18 @@ function Methods:ObserveAll(
 	) -> ()
 )
 	table.insert(self._observeAllFunctions, observeFunction)
+
+	return self
+end
+
+function Methods:ObserveAllAsync(
+	observeFunction: (
+		storeKey: string,
+		newValue: any,
+		oldValue: any
+	) -> ()
+)
+	table.insert(self._asyncObserveAllFunctions, observeFunction)
 
 	return self
 end
@@ -305,32 +351,6 @@ function Methods:Trigger(
 
 	for _, v in self._observeAllFunctions do
 		task.spawn(v)
-	end
-
-	return self
-end
-
-function Methods:Each(
-	eachFunction: (
-		storeKey: string,
-		value: any
-	) -> ()
-): Store
-	for key, value in self._self do
-		eachFunction(key, value)
-	end
-
-	return self
-end
-
-function Methods:EachAsync(
-	eachFunction: (
-		storeKey: string,
-		value: any
-	) -> ()
-): Store
-	for key, value in self._self do
-		task.spawn(eachFunction, key, value)
 	end
 
 	return self
@@ -370,7 +390,33 @@ function Methods:Tween(
 	tweenInfo: TweenInfo,
 	goal: any
 ): Store
-	-- Implement this
+	if self._tweens[storeKey] then
+		self._tweens[storeKey].tween:Destroy()
+		self._tweens[storeKey].valueInstance:Destroy()
+	end
+
+	local valueInstance = if type(goal) == "number"
+		then Instance.new("NumberValue") elseif typeof(goal) == "Vector3"
+		then Instance.new("Vector3Value") elseif typeof(goal) == "CFrame"
+		then Instance.new("CFrameValue") elseif typeof(goal) == "Color3"
+		then Instance.new("Color3Value") else error("Store:Tween()이 지원하지 않는 타입의 목표입니다."); -- because of the fucking damn Roblox's type checker
+	(valueInstance :: any).Value = goal
+	local tween = TweenService:Create(
+		valueInstance,
+		tweenInfo,
+		{ Value = goal }
+	)
+
+	self._tweens[storeKey] = self._tweens[storeKey] or {
+		tween = tween;
+		valueInstance = valueInstance;
+	}
+
+	(valueInstance :: NumberValue).Changed:Connect(function()
+		StoreImpl.__newindex(self, storeKey, valueInstance.Value)
+	end)
+	tween:Play()
+	warn("AAAAAAAAAAAAAA")
 
 	return self
 end
